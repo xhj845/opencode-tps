@@ -25,7 +25,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 或从站点下载 `opencode-tps.zip` 后解压安装：
 
-https://openchamber-tps-u1rz4ugx7kj.qoder.website
+https://opencode-tps-u1rz4ugx7kj.qoder.website
 
 安装脚本会：
 
