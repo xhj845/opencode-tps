@@ -1,0 +1,714 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenCode TPS — 实时 tok/s 浮球（兼容 OpenChamber）</title>
+  <meta name="description" content="在 OpenCode 生成回复时实时显示 token 速度，兼容 OpenChamber。默认浮球，多会话分行，空闲自动隐藏。">
+  <meta name="theme-color" content="#0b0e12">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="OpenCode TPS">
+  <meta property="og:description" content="OpenCode 生成回复时的实时 tok/s 浮球，兼容 OpenChamber。">
+  <meta property="og:image" content="assets/og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <style>
+    :root {
+      --bg: #0b0e12;
+      --bg-2: #0e1319;
+      --line: #232b35;
+      --line-2: #303b49;
+      --text: #e7edf5;
+      --muted: #94a3b4;
+      --dim: #66778a;
+      --green: #62d98a;
+      --amber: #e8b84a;
+      --blue: #6aa9f7;
+      --mono: "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --sans: "Inter", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+      --wrap: min(1040px, calc(100% - 40px));
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.7 var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; text-decoration: none; }
+    button { font: inherit; }
+    svg { display: block; }
+    ::selection { background: rgba(98, 217, 138, .25); }
+    .wrap { width: var(--wrap); margin: 0 auto; }
+    code {
+      font: 12px/1.6 var(--mono);
+      color: #c8d8ea;
+      background: rgba(255, 255, 255, .045);
+      border: 1px solid rgba(255, 255, 255, .055);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .mono { font-family: var(--mono); }
+
+    header.top {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(11, 14, 18, .82);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+    .top-inner {
+      height: 62px;
+      display: flex;
+      align-items: center;
+      gap: 26px;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      font-weight: 650;
+      letter-spacing: -.015em;
+      white-space: nowrap;
+    }
+    .mark {
+      width: 27px;
+      height: 27px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      color: var(--green);
+      border: 1px solid rgba(98, 217, 138, .3);
+      background: rgba(98, 217, 138, .07);
+    }
+    .ver {
+      font: 10px var(--mono);
+      color: var(--dim);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 2px 6px;
+    }
+    .top nav {
+      margin-left: auto;
+      display: flex;
+      gap: 22px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .top nav a:hover { color: var(--text); }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 9px 13px;
+      border: 1px solid var(--line-2);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      background: transparent;
+      transition: background .18s ease, border-color .18s ease;
+    }
+    .btn:hover { background: rgba(255, 255, 255, .04); border-color: #465466; }
+    .btn.primary {
+      background: var(--green);
+      color: #06120a;
+      border-color: var(--green);
+    }
+    .btn.primary:hover { background: #7be6a0; }
+    .btn:focus-visible, a:focus-visible, summary:focus-visible, .ball:focus-visible, .panel:focus-visible {
+      outline: 2px solid var(--green);
+      outline-offset: 2px;
+    }
+
+    main { padding-bottom: 30px; }
+    .intro {
+      display: grid;
+      grid-template-columns: 1.08fr .92fr;
+      gap: 46px;
+      align-items: center;
+      padding: 56px 0 38px;
+    }
+    .kicker {
+      font: 10px var(--mono);
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--dim);
+    }
+    h1 {
+      margin: 12px 0 14px;
+      font-size: 44px;
+      line-height: 1.05;
+      letter-spacing: -.04em;
+      font-weight: 720;
+    }
+    .lead {
+      margin: 0;
+      max-width: 530px;
+      color: var(--muted);
+      font-size: 15.5px;
+      line-height: 1.8;
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 22px; }
+    .actions .btn { padding: 10px 14px; }
+    .note {
+      margin: 18px 0 0;
+      color: var(--dim);
+      font: 10.5px/1.6 var(--mono);
+    }
+
+    .demo-wrap { min-width: 0; }
+    .demo-stage {
+      position: relative;
+      height: 340px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--bg-2);
+      overflow: hidden;
+    }
+    .demo-app {
+      position: absolute;
+      inset: 18px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #0a0e13;
+      overflow: hidden;
+      opacity: .72;
+    }
+    .app-bar {
+      height: 28px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 0 10px;
+      border-bottom: 1px solid var(--line);
+    }
+    .app-dot { width: 6px; height: 6px; border-radius: 50%; background: #33404f; }
+    .app-title {
+      margin-left: 6px;
+      color: var(--dim);
+      font: 8px var(--mono);
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .app-body { display: grid; grid-template-columns: 34px 1fr; height: calc(100% - 28px); }
+    .app-rail {
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 9px;
+      padding-top: 12px;
+    }
+    .app-rail i { width: 11px; height: 11px; border-radius: 3px; background: #1c252f; }
+    .app-rail i:first-child { background: rgba(98, 217, 138, .28); }
+    .app-lines { padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+    .app-line { height: 6px; border-radius: 2px; background: #1b232d; }
+    .app-line.h { height: 8px; background: #26313d; }
+    .app-line.g { background: rgba(98, 217, 138, .2); }
+    .app-line.a { background: rgba(232, 184, 74, .16); }
+    .w44 { width: 44%; }
+    .w62 { width: 62%; }
+    .w76 { width: 76%; }
+    .w88 { width: 88%; }
+    .w96 { width: 96%; }
+
+    .demo-layer { position: absolute; inset: 0; pointer-events: none; }
+    .ball {
+      position: absolute;
+      right: 18px;
+      bottom: 18px;
+      width: 78px;
+      height: 78px;
+      padding: 0;
+      border-radius: 50%;
+      border: 2px solid rgba(98, 217, 138, .8);
+      background: #0e141b;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      cursor: pointer;
+      pointer-events: auto;
+      z-index: 3;
+      transition: transform .18s ease, opacity .18s ease;
+    }
+    .ball:hover { transform: scale(1.03); }
+    .ball b { font: 700 25px/1 var(--mono); letter-spacing: -.06em; }
+    .ball small { margin-top: 2px; font: 8px var(--mono); color: var(--muted); }
+    .ball .count {
+      position: absolute;
+      top: -2px;
+      right: -2px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: var(--green);
+      color: #06120a;
+      border: 2px solid #0e141b;
+      font: 700 8px var(--mono);
+    }
+    .demo-stage.open .ball { opacity: 0; transform: scale(.85); pointer-events: none; }
+
+    .panel {
+      position: absolute;
+      right: 12px;
+      bottom: 12px;
+      width: 300px;
+      max-width: calc(100% - 20px);
+      padding: 4px;
+      border: 1px solid var(--line-2);
+      border-radius: 12px;
+      background: rgba(14, 19, 25, .96);
+      box-shadow: 0 18px 44px rgba(0, 0, 0, .42);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      opacity: 0;
+      transform: translateY(5px);
+      pointer-events: none;
+      transition: opacity .18s ease, transform .18s ease;
+      z-index: 4;
+      cursor: pointer;
+    }
+    .demo-stage.open .panel { opacity: 1; transform: none; pointer-events: auto; }
+    .row {
+      display: grid;
+      grid-template-columns: 2px 1fr auto;
+      gap: 9px;
+      align-items: center;
+      padding: 9px 10px;
+      border-top: 1px solid var(--line);
+    }
+    .row:first-child { border-top: 0; }
+    .bar { width: 2px; height: 27px; border-radius: 2px; background: var(--green); }
+    .bar.a { background: var(--amber); }
+    .bar.b { background: var(--blue); }
+    .row-title { font-size: 11.5px; font-weight: 600; letter-spacing: -.01em; }
+    .row-state { margin-top: 2px; font: 8px var(--mono); color: var(--green); }
+    .row-state.a { color: var(--amber); }
+    .row-state.b { color: var(--blue); }
+    .row-speed { text-align: right; }
+    .row-speed b { display: block; font: 700 21px/1 var(--mono); letter-spacing: -.05em; }
+    .row-speed small { display: block; margin-top: 3px; font: 7.5px var(--mono); color: var(--muted); }
+    .demo-caption {
+      margin-top: 9px;
+      color: var(--dim);
+      font: 9.5px var(--mono);
+      text-align: right;
+    }
+
+    .block {
+      margin-top: 44px;
+      padding-top: 26px;
+      border-top: 1px solid var(--line);
+    }
+    .block h2 {
+      margin: 0 0 10px;
+      font-size: 19px;
+      line-height: 1.3;
+      letter-spacing: -.02em;
+      font-weight: 680;
+    }
+    .block > p, .block li {
+      color: var(--muted);
+      font-size: 13.5px;
+      line-height: 1.8;
+    }
+    .block > p { margin: 0 0 14px; max-width: 750px; }
+    .block ul, .block ol { margin: 0; padding-left: 20px; }
+    .block li { margin: 5px 0; }
+
+    .download-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--bg-2);
+    }
+    .download-name { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .download-name strong { font: 600 13.5px var(--mono); letter-spacing: -.01em; }
+    .download-name span { color: var(--dim); font: 10px var(--mono); }
+    .download-row .btn { flex: none; }
+    .checksum {
+      margin: 9px 0 0;
+      color: var(--dim);
+      font: 9px/1.6 var(--mono);
+      word-break: break-all;
+    }
+    .checksum b { color: var(--muted); font-weight: 500; }
+
+    .files {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .file-row {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      gap: 14px;
+      padding: 7px 12px;
+      border-top: 1px solid var(--line);
+      font: 10.5px var(--mono);
+      color: var(--muted);
+    }
+    .file-row:first-child { border-top: 0; }
+    .file-row span:last-child { color: var(--dim); font-family: var(--sans); font-size: 11.5px; }
+
+    .code {
+      margin: 12px 0 0;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #080b0f;
+      overflow: hidden;
+    }
+    .code-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--line);
+      color: var(--dim);
+      font: 8.5px var(--mono);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .copy {
+      border: 0;
+      background: transparent;
+      color: var(--dim);
+      cursor: pointer;
+      padding: 2px 3px;
+      font: 8.5px var(--mono);
+      text-transform: uppercase;
+    }
+    .copy:hover { color: var(--text); }
+    .code pre {
+      margin: 0;
+      padding: 10px 12px;
+      overflow: auto;
+      color: #cad9ea;
+      font: 11px/1.7 var(--mono);
+      white-space: pre;
+    }
+
+    details {
+      margin-top: 10px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: rgba(14, 19, 25, .5);
+    }
+    summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 11px 13px;
+      cursor: pointer;
+      font-size: 12.5px;
+      font-weight: 600;
+      list-style: none;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::after { content: "+"; color: var(--dim); font: 15px var(--mono); }
+    details[open] summary::after { content: "−"; }
+    .details-body { padding: 0 13px 13px; color: var(--muted); font-size: 12.5px; line-height: 1.8; }
+    .details-body p { margin: 0 0 8px; }
+    .details-body p:last-child { margin-bottom: 0; }
+
+    .usage-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0 32px;
+      margin: 0;
+    }
+    .usage-list div {
+      display: grid;
+      grid-template-columns: 92px 1fr;
+      gap: 12px;
+      padding: 7px 0;
+      border-top: 1px solid var(--line);
+    }
+    .usage-list dt { color: var(--text); font-size: 12.5px; font-weight: 600; }
+    .usage-list dd { margin: 0; color: var(--muted); font-size: 12.5px; }
+
+    footer {
+      margin-top: 52px;
+      border-top: 1px solid var(--line);
+      padding: 20px 0 34px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      flex-wrap: wrap;
+      color: var(--dim);
+      font: 9.5px var(--mono);
+    }
+    .footer-links { display: flex; gap: 16px; }
+    .footer-links a:hover { color: var(--text); }
+
+    @media (max-width: 900px) {
+      .intro { grid-template-columns: 1fr; gap: 28px; padding-top: 38px; }
+      .demo-wrap { max-width: 560px; }
+    }
+    @media (max-width: 640px) {
+      :root { --wrap: calc(100% - 28px); }
+      .top-inner { height: 56px; }
+      .top nav { display: none; }
+      h1 { font-size: 36px; }
+      .lead { font-size: 14.5px; }
+      .demo-stage { height: 300px; }
+      .ball { width: 68px; height: 68px; right: 12px; bottom: 12px; }
+      .ball b { font-size: 21px; }
+      .panel { width: calc(100% - 20px); right: 10px; bottom: 10px; }
+      .usage-list { grid-template-columns: 1fr; }
+      .usage-list div { grid-template-columns: 84px 1fr; }
+      .file-row { grid-template-columns: 120px 1fr; }
+      .download-row { flex-direction: column; align-items: flex-start; }
+      .download-row .btn { width: 100%; }
+      footer { flex-direction: column; align-items: flex-start; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { transition: none !important; animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-inner">
+      <a class="brand" href="#top" aria-label="OpenCode TPS">
+        <span class="mark" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13l0-8Z"/></svg>
+        </span>
+        <span>OpenCode TPS</span>
+        <span class="ver">v1.2.0</span>
+      </a>
+      <nav aria-label="页面导航">
+        <a href="#download">下载</a>
+        <a href="#install">安装</a>
+        <a href="#usage">使用</a>
+        <a href="#limits">限制</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap" id="top">
+    <section class="intro">
+      <div>
+        <div class="kicker">OpenCode · Windows · 兼容 OpenChamber</div>
+        <h1>OpenCode TPS</h1>
+        <p class="lead">在 OpenCode（桌面版 / CLI）生成回复时实时显示 token 速度，兼容 OpenChamber。默认是一个小浮球；有多个会话时点开看每个会话的 tok/s。</p>
+        <div class="actions">
+          <a class="btn primary" href="downloads/opencode-tps.zip" download>下载 zip <span class="mono" style="font-size:10px;opacity:.65;">15 KB</span></a>
+          <a class="btn" href="#install">安装说明</a>
+        </div>
+        <p class="note">Python 3.10+ · 本地运行 · 不联网 · 不读 API Key · 非官方工具</p>
+      </div>
+
+      <div class="demo-wrap">
+        <div class="demo-stage" id="demoStage">
+          <div class="demo-app" aria-hidden="true">
+            <div class="app-bar">
+              <span class="app-dot"></span><span class="app-dot"></span><span class="app-dot"></span>
+              <span class="app-title">OpenCode / session</span>
+            </div>
+            <div class="app-body">
+              <div class="app-rail"><i></i><i></i><i></i><i></i></div>
+              <div class="app-lines">
+                <div class="app-line h w62"></div>
+                <div class="app-line w96"></div>
+                <div class="app-line w88"></div>
+                <div class="app-line g w44"></div>
+                <div class="app-line w96"></div>
+                <div class="app-line w76"></div>
+                <div class="app-line a w44"></div>
+                <div class="app-line w96"></div>
+                <div class="app-line w62"></div>
+              </div>
+            </div>
+          </div>
+          <div class="demo-layer">
+            <button class="ball" id="demoBall" type="button" aria-label="展开速度面板" aria-expanded="false" aria-controls="demoPanel">
+              <b>142</b><small>≈ tok/s</small><span class="count" aria-hidden="true">2</span>
+            </button>
+            <div class="panel" id="demoPanel" role="button" tabindex="0" aria-label="收起速度面板">
+              <div class="row">
+                <span class="bar" aria-hidden="true"></span>
+                <div><div class="row-title">重构登录流程</div><div class="row-state">输出中</div></div>
+                <div class="row-speed"><b>142</b><small>≈ tok/s</small></div>
+              </div>
+              <div class="row">
+                <span class="bar a" aria-hidden="true"></span>
+                <div><div class="row-title">补全接口测试</div><div class="row-state a">思考中</div></div>
+                <div class="row-speed"><b>166</b><small>≈ tok/s</small></div>
+              </div>
+              <div class="row">
+                <span class="bar b" aria-hidden="true"></span>
+                <div><div class="row-title">升级依赖版本</div><div class="row-state b">工具中 2.3s</div></div>
+                <div class="row-speed"><b>—</b><small></small></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="demo-caption">点浮球展开 · 点面板收起</div>
+      </div>
+    </section>
+
+    <section class="block" id="download">
+      <h2>下载</h2>
+      <div class="download-row">
+        <div class="download-name">
+          <strong>opencode-tps.zip</strong>
+          <span>v1.2.0 · 15 KB · Windows · 源码随包</span>
+        </div>
+        <a class="btn primary" href="downloads/opencode-tps.zip" download>下载</a>
+      </div>
+      <p class="checksum"><b>SHA-256</b> DE2557A4BCF05B76A0A28825A7EC910D74003C6C2460FA9EA1EE8BA285E2D399</p>
+      <p class="note">v1.2.0：以 OpenCode 为主入口，兼容 OpenChamber；两边的活动会话合并显示。</p>
+      <div class="files">
+        <div class="file-row"><span>plugin/tps-live.js</span><span>OpenCode 插件（OpenChamber 共用）</span></div>
+        <div class="file-row"><span>app/overlay.py</span><span>Tkinter 浮球与面板</span></div>
+        <div class="file-row"><span>app/watcher.py</span><span>随 OpenCode / OpenChamber 启停</span></div>
+        <div class="file-row"><span>app/common.py</span><span>路径与进程检测</span></div>
+        <div class="file-row"><span>install.ps1</span><span>安装、启动项、启动守护进程</span></div>
+        <div class="file-row"><span>uninstall.ps1</span><span>卸载</span></div>
+        <div class="file-row"><span>README.md</span><span>安装、使用、卸载、隐私</span></div>
+      </div>
+    </section>
+
+    <section class="block" id="install">
+      <h2>安装</h2>
+      <p>Windows 10/11，Python 3.10+（含 Tkinter）。安装脚本不需要管理员权限；会复制文件、创建启动项、启动守护进程。</p>
+      <p>解压后运行：</p>
+      <div class="code">
+        <div class="code-head"><span>PowerShell</span><button class="copy" type="button">复制</button></div>
+        <pre><code>Expand-Archive .\opencode-tps.zip -DestinationPath .\opencode-tps
+cd .\opencode-tps
+powershell -ExecutionPolicy Bypass -File .\install.ps1</code></pre>
+      </div>
+      <p style="margin-top:12px;">然后重启一次 OpenCode 或 OpenChamber，发一条消息。浮球只在生成时出现，所有会话结束后自动隐藏。</p>
+      <details>
+        <summary>手动安装</summary>
+        <div class="details-body">
+          <p>1. 复制 <code>plugin\tps-live.js</code> 到 <code>%USERPROFILE%\.config\opencode\plugins\</code>。</p>
+          <p>2. 复制 <code>app\common.py</code>、<code>app\overlay.py</code>、<code>app\watcher.py</code> 到 <code>%LOCALAPPDATA%\OpenChamberTps\</code>。</p>
+          <p>3. 用 <code>pythonw.exe</code> 启动 <code>watcher.py</code>；可选：在启动文件夹创建同名快捷方式。</p>
+          <p>4. 重启 OpenCode 或 OpenChamber。</p>
+        </div>
+      </details>
+    </section>
+
+    <section class="block" id="usage">
+      <h2>使用</h2>
+      <dl class="usage-list">
+        <div><dt>单击浮球</dt><dd>展开速度面板。</dd></div>
+        <div><dt>单击面板</dt><dd>任意位置收回浮球。</dd></div>
+        <div><dt>按住拖动</dt><dd>移动浮球，位置会记住。</dd></div>
+        <div><dt>右键菜单</dt><dd>展开、收起、隐藏 30 秒或退出监控。</dd></div>
+      </dl>
+      <p style="margin:12px 0 0;">没有进行中的会话时浮球自动隐藏；面板最多显示 4 个会话，顺序按首次出现固定。</p>
+    </section>
+
+    <section class="block" id="how">
+      <h2>工作原理</h2>
+      <p>OpenCode 插件订阅 <code>session.text.delta</code> 和推理增量，按会话把 1.5 秒滚动速度写入本地 JSON。Python/Tkinter 悬浮窗读取这个文件并绘制浮球和面板。</p>
+      <p>兼容 OpenChamber：它和 OpenCode 共用 <code>~/.config/opencode/plugins</code>；插件分别写入 <code>state-opencode-*</code> 和 <code>state-openchamber-*</code>，浮球合并显示两边的活动会话。</p>
+      <p>流式阶段的速度是估算值，显示为 <code>≈ tok/s</code>；回合结束时用 provider 返回的 output/reasoning token 数校正，显示精确平均速度。插件不联网、不读 API Key，只写本地状态文件。</p>
+    </section>
+
+    <section class="block" id="limits">
+      <h2>限制</h2>
+      <ul>
+        <li>当前安装包只面向 Windows；macOS / Linux 需要手动放置文件并自行配置启动方式。</li>
+        <li>流式速度是估算值，精确值在回合结束后才可用。</li>
+        <li>面板最多显示 4 个会话；更多会话只在浮球徽标里显示数量。</li>
+        <li>OpenCode 桌面版与 CLI 均可使用；OpenChamber 作为兼容目标保留。</li>
+        <li>依赖 OpenCode v2 插件事件接口；OpenCode / OpenChamber 大版本更新后可能需要适配。</li>
+        <li>非官方工具，不隶属于 OpenCode 或 OpenChamber。</li>
+      </ul>
+    </section>
+
+    <section class="block" id="faq">
+      <h2>常见问题</h2>
+      <details>
+        <summary>浮球没有出现？</summary>
+        <div class="details-body">确认当前有会话正在思考、输出或执行工具；空闲时会自动隐藏。如果生成中仍然没有，重启一次 OpenCode 或 OpenChamber，并查看 <code>%LOCALAPPDATA%\OpenChamberTps\plugin.log</code>。</div>
+      </details>
+      <details>
+        <summary>速度数字准确吗？</summary>
+        <div class="details-body">流式阶段是基于增量文本的近似值，所以显示 <code>≈ tok/s</code>。回合结束时使用 provider 返回的 token 数校正，显示精确平均速度。</div>
+      </details>
+      <details>
+        <summary>会影响 OpenCode / OpenChamber 吗？</summary>
+        <div class="details-body">不会。插件只订阅生成事件并写本地状态，不修改 OpenCode 或 OpenChamber 的界面或配置。卸载时删除插件文件并结束 <code>pythonw</code> 进程即可。</div>
+      </details>
+      <details>
+        <summary>怎么卸载？</summary>
+        <div class="details-body">运行包里的 <code>uninstall.ps1</code>，或手动删除启动文件夹中的 <code>OpenCode TPS.lnk</code>（旧版为 <code>OpenChamber TPS.lnk</code>）、<code>%USERPROFILE%\.config\opencode\plugins\tps-live.js</code> 和 <code>%LOCALAPPDATA%\OpenChamberTps</code>。</div>
+      </details>
+    </section>
+
+    <footer>
+      <div>OpenCode TPS · v1.2.0 · 非官方工具 · 兼容 OpenChamber</div>
+      <div class="footer-links">
+        <a href="https://opencode.ai" target="_blank" rel="noreferrer">OpenCode</a>
+        <a href="https://openchamber.dev" target="_blank" rel="noreferrer">OpenChamber</a>
+      </div>
+    </footer>
+  </main>
+
+  <script>
+    (function () {
+      const stage = document.getElementById('demoStage');
+      const ball = document.getElementById('demoBall');
+      const panel = document.getElementById('demoPanel');
+      if (stage && ball && panel) {
+        const setOpen = (open) => {
+          stage.classList.toggle('open', open);
+          ball.setAttribute('aria-expanded', String(open));
+        };
+        ball.addEventListener('click', () => setOpen(true));
+        panel.addEventListener('click', () => setOpen(false));
+        panel.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            setOpen(false);
+          }
+        });
+      }
+
+      document.querySelectorAll('.copy').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const block = button.closest('.code');
+          const code = block && block.querySelector('pre');
+          if (!code) return;
+          try {
+            await navigator.clipboard.writeText(code.innerText);
+            const old = button.textContent;
+            button.textContent = '已复制';
+            setTimeout(() => { button.textContent = old; }, 1200);
+          } catch (error) {
+            button.textContent = '复制失败';
+            setTimeout(() => { button.textContent = '复制'; }, 1200);
+          }
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

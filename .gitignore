@@ -1,0 +1,12 @@
+# Qoder site binding contains private action records
+*.qoder.site
+
+# Local scratch
+github_check.py
+live-*.html
+live-*.zip
+*.log
+
+# Python
+__pycache__/
+*.pyc
